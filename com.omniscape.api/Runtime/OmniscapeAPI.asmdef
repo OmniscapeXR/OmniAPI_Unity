@@ -1,0 +1,17 @@
+{
+    "name": "OmniscapeAPI",
+    "rootNamespace": "",
+    "references": [
+        "GUID:baf0237e5e654adcbfde1dce54859517",
+        "GUID:d1c7307b8fea4adeaff13e69039e36f8"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
