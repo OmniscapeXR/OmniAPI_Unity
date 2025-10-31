@@ -1,7 +1,7 @@
 {
   "name": "com.omniscape.api",
   "displayName": "Omniscape API",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "unity": "2021.3",
   "description": "Token-in, REST-out backend API for Omniscape.",
   "author": {
