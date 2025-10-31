@@ -1,5 +1,5 @@
 {
-  "name": "com.omniscape.com.omniscape.api",
+  "name": "com.omniscape.api",
   "displayName": "Omniscape API",
   "version": "0.1.0",
   "unity": "2021.3",
@@ -8,6 +8,7 @@
     "name": "Omniscape"
   },
   "dependencies": {
-    "com.unity.modules.unitywebrequest": "1.0.0"
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.textmeshpro": "3.0.6"
   }
 }

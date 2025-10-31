@@ -1,0 +1,4 @@
+repository "OmniAPI_Unity@omniscape@cloud"
+  path "/"
+    br "/main"
+    co "/main"
