@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 #if TMP_PRESENT
 using TMPro;
@@ -5,18 +6,11 @@ using TMPro;
 using UnityEngine.UI;
 #endif
 
-
 public class DevLoginButton : MonoBehaviour
 {
-#if TMP_PRESENT
-public TMP_InputField bearerTokenField;
-public TMP_InputField userIdField;
-#else
-    public InputField bearerTokenField;
-    public InputField userIdField;
-#endif
+    public TMP_InputField bearerTokenField;
+    public TMP_InputField userIdField;
 
-    //Making changes!
     public OmniscapeInitializer initializer;
 
     public void Submit()

@@ -1,13 +1,12 @@
 using System;
-
+using UnityEngine;
 using Omniscape;
 using Omniscape.UI;
-using Omniscape.API;        // HttpClientU, Json utils, etc.
-using Omniscape.API.Inventory;
-using Omniscape.API.Models.Realtime; // InventoryService
-using Omniscape.API.Realtime;
-using UnityEngine;
 
+/// <summary>
+/// Boots the Omniscape SDK, starts the login flow (WebView or external), and caches the logged-in user.
+/// In the Editor, you can show a paste-token panel instead of launching WebView.
+/// </summary>
 public class OmniscapeInitializer : MonoBehaviour
 {
     [Header("SDK Config Asset")]
@@ -20,95 +19,150 @@ public class OmniscapeInitializer : MonoBehaviour
     [Header("Editor-only Dev Login UI")]
     public GameObject editorLoginPanel;
 
-    [Tooltip("When ON (Editor only), shows the paste-token panel instead of opening the browser.")]
-    public bool useEditorPanelInEditor = false;
-
-    private OmniscapeLoginView _loginInstance;
-
-    // keep a reference so we can close the socket on quit/destroy
-    private LocationSocket _locSocket;
+#if UNITY_EDITOR
+    [Tooltip("When true in the Editor, shows the paste-token panel instead of launching the web login.")]
+    public bool useEditorPanelInEditor = true;
+#endif
 
     void Awake()
     {
-        if (config == null) { Debug.LogError("[OmniscapeInitializer] No config assigned!"); return; }
+        if (config == null)
+        {
+            Debug.LogError("[OmniscapeInitializer] Missing OmniscapeAPIConfig. Assign it on the component.");
+            return;
+        }
 
-        OmniscapeAPI.Initialize(config);
-        Debug.Log($"[OmniscapeInitializer] Omniscape SDK initialized with base: {OmniscapeAPI.ApiBase}");
+        // Initialize the SDK + token store
+        OmniscapeAPI.Initialize(config, TokenStoreFactory.Create());
+        Debug.Log("[OmniscapeInitializer] Omniscape SDK initialized with base: " + config.ApiBase);
 
 #if UNITY_EDITOR
+        // If an editor login panel is present and enabled, use it and DO NOT start web login
         if (useEditorPanelInEditor && editorLoginPanel != null)
         {
             editorLoginPanel.SetActive(true);
-            StartLoginFlow();
             return;
         }
 #endif
+        
+        if (!string.IsNullOrEmpty(Application.absoluteURL))
+        {
+            Debug.Log("[Initializer] Launched via deep link; skipping external login.");
+            return;
+        }
+
+        var existing = Omniscape.OmniscapeAPI.TokenStore?.AccessToken;
+        if (!string.IsNullOrEmpty(existing))
+        {
+            Debug.Log("[Initializer] Token exists; resolving user and continuing.");
+            _ = ContinueFromExistingToken();
+            return;
+        }
+        
         StartLoginFlow();
     }
 
-    private void StartLoginFlow()
+    /// <summary>
+    /// Starts the login flow. If a login view exists, it will be used; otherwise falls back to external browser.
+    /// </summary>
+    public void StartLoginFlow()
     {
-        if (_loginInstance != null) return;
-
-        _loginInstance = FindObjectOfType<OmniscapeLoginView>();
-        if (_loginInstance == null)
+        var view = FindObjectOfType<OmniscapeLoginView>();
+        if (view == null && loginViewPrefab != null)
         {
-            if (loginViewPrefab != null) _loginInstance = Instantiate(loginViewPrefab);
-            else { Debug.LogWarning("[OmniscapeInitializer] No OmniscapeLoginView found or prefab assigned; cannot start login."); return; }
+            view = Instantiate(loginViewPrefab);
         }
 
-        _loginInstance.OnLoginSuccess.AddListener(OnLoginSuccess);
-        _loginInstance.Show();
-    }
-
-// Replace your existing method with this version: it compiles in all configs.
-    public async void ContinueWithDevCredentials(string bearerToken, string userId)
-    {
-#if UNITY_EDITOR
-        if (!string.IsNullOrEmpty(bearerToken))
-            OmniscapeAPI.SetAccessToken(bearerToken);
-
-        if (string.IsNullOrEmpty(userId))
+        if (view != null)
         {
-            Debug.LogWarning("[OmniscapeInitializer] User ID is required (no /auth/me endpoint on backend).");
-            return;
-        }
-
-        UserRecord me = null;
-        try
-        {
-            var url = $"{OmniscapeAPI.ApiBase}/user?id={UnityEngine.Networking.UnityWebRequest.EscapeURL(userId)}";
-            Debug.Log($"[OmniscapeInitializer] FetchUserById → {url}");
-            me = await OmniscapeAPI.FetchUserById(userId);
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"[OmniscapeInitializer] Fetch by id failed: {e.GetType().Name} → {e.Message}");
-        }
-
-        if (me != null)
-        {
-            if (editorLoginPanel) editorLoginPanel.SetActive(false);
-            OnLoginSuccess(me);
+            view.OnLoginSuccess.AddListener(OnLoginSuccess);
+            view.Show();
         }
         else
         {
-            Debug.LogWarning("[OmniscapeInitializer] Could not validate dev credentials. Check token/user id.");
+            Debug.LogWarning("[OmniscapeInitializer] No OmniscapeLoginView found. Opening external login URL.");
+            OpenWebLogin();
         }
-#else
-    Debug.LogWarning("[OmniscapeInitializer] ContinueWithDevCredentials is Editor-only.");
-#endif
+    }
+    
+    private void OpenWebLogin()
+    {
+        // Resolve the correct web login base (honor staging toggle when available on config)
+        var baseUrl = config?.WebLoginBase;
+
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            Debug.LogWarning("[OmniscapeInitializer] WebLoginBase not set in config.");
+            return;
+        }
+
+        // Normalize and ensure scheme
+        baseUrl = baseUrl.Trim();
+        if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            baseUrl = "https://" + baseUrl.TrimStart('/');
+        }
+
+        // Always hit the explicit Unity entry so the site knows to deep-link back
+        var loginUrl = baseUrl.TrimEnd('/') + "/login?from=unity";
+        Debug.Log("[OmniscapeInitializer] Opening Web Login: " + loginUrl);
+        Application.OpenURL(loginUrl);
+    }
+    
+    private async System.Threading.Tasks.Task ContinueFromExistingToken()
+    {
+        var token = Omniscape.OmniscapeAPI.TokenStore?.AccessToken;
+        if (string.IsNullOrEmpty(token))
+        {
+            OpenWebLogin();
+            return;
+        }
+
+        // decode sub from JWT
+        var userId = Omniscape.JwtUtils.TryGetSub(token);
+        if (string.IsNullOrEmpty(userId))
+        {
+            Debug.LogWarning("[Initializer] Token missing sub; signing out and relaunching login.");
+            Omniscape.OmniscapeAPI.SignOut();
+            OpenWebLogin();
+            return;
+        }
+
+        try
+        {
+            var me = await Omniscape.OmniscapeAPI.FetchUserById(userId);
+            if (me == null)
+            {
+                Debug.LogWarning("[Initializer] FetchUserById returned null; signing out.");
+                Omniscape.OmniscapeAPI.SignOut();
+                OpenWebLogin();
+                return;
+            }
+
+            // good to go
+            Omniscape.GlobalUserCache.Set(me);
+            Debug.Log($"[Initializer] ✅ Resumed as {me.username} ({me.email})");
+            UnityEngine.SceneManagement.SceneManager.LoadScene("MainScene");
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("[Initializer] ContinueFromExistingToken failed: " + e.Message);
+            Omniscape.OmniscapeAPI.SignOut();
+            OpenWebLogin();
+        }
     }
 
-
     /// <summary>
-    /// Called when login completes. Sets user cache, verifies token, then:
-    /// 1) fetches user inventory (Marketplace API)
-    /// 2) connects location websocket and starts the Unity GPS sender
+    /// Called when the user has successfully logged in.
     /// </summary>
-    private async void OnLoginSuccess(UserRecord me)
+    private void OnLoginSuccess(UserRecord me)
     {
-        if (me == null) { Debug.LogError("[OmniscapeInitializer] Login callback returned a null user record."); return; }
+        if (me == null)
+        {
+            Debug.LogError("[OmniscapeInitializer] Login callback returned a null user record.");
+            return;
+        }
 
         GlobalUserCache.Set(me);
         var uid = me.UserId;
@@ -118,83 +172,55 @@ public class OmniscapeInitializer : MonoBehaviour
         if (string.IsNullOrEmpty(token))
             Debug.LogWarning("[OmniscapeInitializer] ⚠️ No access token found after login. Check WebView token handoff or token persistence.");
         else
-            Debug.Log($"[OmniscapeInitializer] Token present (len {token.Length}) • head: {token.Substring(0, Mathf.Min(10, token.Length))}…");
+            Debug.Log($"[OmniscapeInitializer] Token present (len {token.Length}) • head: {token.Substring(0, Math.Min(10, token.Length))}…");
 
-        // --- Inventory from Marketplace host -----------------------------------
-        var httpMarket = new HttpClientU(
-            config.MarketplaceApiBase,
-            () => OmniscapeAPI.TokenStore?.AccessToken
-        );
+        // TODO: Load your main scene here if desired
+        // UnityEngine.SceneManagement.SceneManager.LoadScene("MainScene");
+    }
+
+#if UNITY_EDITOR
+    /// <summary>
+    /// Editor-only helper to bypass WebView. Paste a bearer token and optional user id.
+    /// </summary>
+    public async void ContinueWithDevCredentials(string bearerToken, string userId)
+    {
+        if (string.IsNullOrEmpty(bearerToken))
+        {
+            Debug.LogError("[OmniscapeInitializer] Dev token is empty.");
+            return;
+        }
+        OmniscapeAPI.SetAccessToken(bearerToken);
+
+        var http = new HttpClientU(config.ApiBase, () => OmniscapeAPI.TokenStore?.AccessToken);
+        var users = new Omniscape.UsersService(http);
 
         try
         {
-            var invService = new InventoryService(httpMarket);
-            var docs = await invService.GetUserInventoryAsync(uid);
-            var items = docs.ConvertAll(InventoryService.ToItem);
-            Debug.Log($"[OmniscapeInitializer] 🧳 Loaded {items.Count} inventory items from Marketplace.");
-            // TODO: hand 'items' to your UI/inventory system
+            UserRecord me = null;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                Debug.Log($"[OmniscapeInitializer] FetchUserById → {config.ApiBase}/user?id={UnityEngine.Networking.UnityWebRequest.EscapeURL(userId)}");
+                me = await users.GetById(userId);
+            }
+            else
+            {
+                me = await users.GetMe();
+            }
+            if (me != null) OnLoginSuccess(me);
+            else Debug.LogError("[OmniscapeInitializer] Dev login did not return a user record.");
         }
-        catch (System.Exception ex)
+        catch (Exception e)
         {
-            Debug.LogError($"[OmniscapeInitializer] ❌ Inventory fetch failed → {ex.Message}");
+            Debug.LogError($"[OmniscapeInitializer] Fetch by id failed: {e.GetType().Name} → {e.Message}");
         }
-        // --- Location WebSocket -------------------------------------------------
-        try
-        {
-            Debug.Log($"[OmniscapeInitializer] © Using WS URL from config: {config.LocationWsUrl}");
-
-            // Create socket
-            _locSocket = new LocationSocket(config.LocationWsUrl);
-            
-            _locSocket.OnEvent += (name, args) => 
-                Debug.Log($"[LocationSocket] evt={name} args0={(args != null && args.Length > 0 ? args[0] : "<none>")}");
-
-
-            // Start connect (fire-and-forget; do NOT await)
-            _locSocket.Connect();
-
-            // Optionally gate the next steps until the socket is open
-            await _locSocket.WaitUntilReadyAsync(100000); // 10s timeout
-
-            Debug.Log($"[OmniscapeInitializer] We are connected to socket!");
-            
-
-            // Service GameObject (don’t call DontDestroyOnLoad in Edit Mode)
-            Debug.Log($"[OmniscapeInitializer] Creating Location GameObject");
-            var go = new GameObject("LocationUpdateService");
-            if (Application.isPlaying) DontDestroyOnLoad(go);
-
-            var svc = go.AddComponent<LocationUpdateService>();
-            await svc.Initialize(_locSocket, me.UserId);
-            
-            // First request after CONNECT
-            Debug.Log($"[OmniscapeInitializer] Making Location Call!");
-            await _locSocket.SendLocation(new LocationUpdateMsg {
-                longitude   = -0.1909603,
-                latitude    = 51.4818435,
-                maxDistance = 1000
-            });
-
-            Debug.Log("[OmniscapeInitializer] 📡 Location streaming started.");
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogWarning($"[OmniscapeInitializer] Location stream failed: {ex.Message}");
-        }
-
-
-         UnityEngine.SceneManagement.SceneManager.LoadScene("LoaderScene");
     }
-
-    // Ensure the socket stops reconnecting when play ends or this object is destroyed
-    private void OnApplicationQuit()
+#else
+    /// <summary>
+    /// Dev-only login helper is not available at runtime builds. This stub exists to keep callers compiling.
+    /// </summary>
+    public void ContinueWithDevCredentials(string bearerToken, string userId)
     {
-        if (Application.isPlaying)
-            _locSocket?.CloseAsync();
+        Debug.LogWarning("[OmniscapeInitializer] ContinueWithDevCredentials is Editor-only. Ignoring call in player builds.");
     }
-    private void OnDestroy()
-    {
-        if (_locSocket != null) _ = _locSocket.CloseAsync();
-    }
-    
+#endif
 }

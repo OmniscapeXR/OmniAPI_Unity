@@ -1,82 +1,76 @@
 // Plugins/Runtime/Models/Inventory/OmniscapeInventoryDoc.cs
 using System;
 using System.Collections.Generic;
-using UnityEngine;
+using Newtonsoft.Json;
 
 namespace Omniscape.API.Models.Inventory
 {
-    /// <summary>
-    /// Raw doc as returned by the API, shaped for Unity's JsonUtility.
-    /// Field names must match JSON keys exactly.
-    /// NOTE: JsonUtility doesn't handle DateTime well, so timestamps are strings.
-    /// </summary>
     [Serializable]
     public class OmniscapeInventoryDoc
     {
-        public string _id;
-        public string id;
-        public string owner_id;
-        public string catalog_id;
-        public string gltf_id;
-        public string order_id;
-        public string tx_id;
+        [JsonProperty("_id")] public string _id;
+        [JsonProperty("id")] public string id;
+        [JsonProperty("owner_id")] public string owner_id;
+        [JsonProperty("catalog_id")] public string catalog_id;
+        [JsonProperty("gltf_id")] public string gltf_id;
+        [JsonProperty("order_id")] public string order_id;
+        [JsonProperty("tx_id")] public string tx_id;
 
-        public int serial_no;
-        public float map_scale;
-        public float[] model_rotation;
-        public float[] collider_scale;
-        public List<OmniCollider> collider_data;
+        [JsonProperty("serial_no")] public int serial_no;
+        [JsonProperty("map_scale")] public float map_scale;
+        [JsonProperty("model_rotation")] public float[] model_rotation;
+        [JsonProperty("collider_scale")] public float[] collider_scale;
+        [JsonProperty("collider_data")] public List<OmniCollider> collider_data;
 
-        // Use string for timestamps (ISO-8601) to keep JsonUtility happy
-        public string ts_created;
-        public string ts_updated;
-        public string ts_transferred;
+        [JsonProperty("ts_created")] public DateTime? ts_created;
+        [JsonProperty("ts_updated")] public DateTime? ts_updated;
+        [JsonProperty("ts_transferred")] public DateTime? ts_transferred;
 
-        public bool spawnable;
-        public bool dropped;
-        public bool only_admins;
-        public bool coming_soon;
+        [JsonProperty("spawnable")] public bool spawnable;
+        [JsonProperty("dropped")] public bool dropped;
+        [JsonProperty("only_admins")] public bool only_admins;
+        [JsonProperty("coming_soon")] public bool coming_soon;
 
-        public string title;
-        public string name;
-        public string description;
-        public string type;
-        public string category;
-        public List<string> tags;
+        [JsonProperty("title")] public string title;
+        [JsonProperty("name")] public string name;
+        [JsonProperty("description")] public string description;
+        [JsonProperty("type")] public string type;
+        [JsonProperty("category")] public string category;
+        [JsonProperty("tags")] public List<string> tags;
 
-        public string file_format;
-        public string file_storage_reference;
-        public string gs_file_storage_reference;
-        public string file_storage_zip;
-        public string url;
+        [JsonProperty("file_format")] public string file_format;
+        [JsonProperty("file_storage_reference")] public string file_storage_reference;
+        [JsonProperty("gs_file_storage_reference")] public string gs_file_storage_reference;
+        [JsonProperty("file_storage_zip")] public string file_storage_zip;
+        [JsonProperty("url")] public string url;
 
-        public string thumbnail_url;
-        public string thumbnail_storage_reference;
-        public string gs_thumbnail_storage_reference;
+        [JsonProperty("thumbnail_url")] public string thumbnail_url;
+        [JsonProperty("thumbnail_storage_reference")] public string thumbnail_storage_reference;
+        [JsonProperty("gs_thumbnail_storage_reference")] public string gs_thumbnail_storage_reference;
 
-        public long size;
-        public string size_formatted;
+        [JsonProperty("size")] public long size;
+        [JsonProperty("size_formatted")] public string size_formatted;
 
-        public List<string> app_categories;
-        public List<string> animations;
+        [JsonProperty("app_categories")] public List<string> app_categories;
+        [JsonProperty("animations")] public List<string> animations;
 
-        public string ordinal_id;
-        public string ordinal_origin;
-        public string ordinal_rarity;
+        [JsonProperty("ordinal_id")] public string ordinal_id;
+        [JsonProperty("ordinal_origin")] public string ordinal_origin;
+        [JsonProperty("ordinal_rarity")] public string ordinal_rarity;
 
-        public float? ar_scale;   // Nullable floats are supported as class fields
-        public string color;
+        [JsonProperty("ar_scale")] public float? ar_scale;
+        [JsonProperty("color")] public string color;
     }
 
     [Serializable]
     public class OmniCollider
     {
-        public float[] rotation;
-        public float[] scale;
-        public float[] position;
+        [JsonProperty("rotation")] public float[] rotation;
+        [JsonProperty("scale")] public float[] scale;
+        [JsonProperty("position")] public float[] position;
     }
 
-    /// <summary>Light, game-facing projection.</summary>
+    // Light, game-facing projection
     [Serializable]
     public class InventoryItem
     {

@@ -11,7 +11,7 @@ public class OmniscapeAPIConfig : ScriptableObject
     [Header("Environment")]
     public bool useStaging;
     public string apiBaseStaging = "https://dev.core.omniscape.com";
-    public string webLoginBaseStaging = "https://marketplace-staging.omniscape.com";
+    public string webLoginBaseStaging = "https://marketplace.omniscape.com/login?from=unity";
     public string marketplaceApiBaseStaging = "https://marketplace-staging.omniscape.com";
     
     [Header("Realtime (WebSocket)")]

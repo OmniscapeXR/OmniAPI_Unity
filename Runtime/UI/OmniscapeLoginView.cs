@@ -1,143 +1,68 @@
-using System;
-using Omniscape;
 using UnityEngine;
 using UnityEngine.Events;
 
-// Payload event so you can wire it from the Inspector
-[Serializable] public class UserEvent : UnityEvent<UserRecord> { }
-
-
 namespace Omniscape.UI
 {
-  public class OmniscapeLoginView : MonoBehaviour
-  {
-    [Header("URL")]
-    [Tooltip("Relative path after WebLoginBase, e.g. \"login?from=unity\"")]
-    public string loginPath = "login?from=unity";
-    [Tooltip("Optional iOS-only query append, e.g. \"ios=1\"")]
-    public string iosAddition = "";
-
-    [Header("Events")]
-    public UserEvent OnLoginSuccess;
-    public UnityEvent OnLogout;
-    public UnityEvent OnClosed;
-    public UnityEvent OnError;
-
-    [Header("Options")]
-    public bool openLinksExternally = true;   // allow external links in the page to open system browser
-
-#if OMNI_USE_UNIWEBVIEW
-    private UniWebView _webView;
-#endif
-
-    string BuildUrl()
+    /// <summary>
+    /// OmniscapeLoginView
+    /// Minimal login view bridge that triggers the web login flow and raises an event on success.
+    /// Your project can wire this to an in-app WebView; by default we fall back to opening the login URL.
+    /// </summary>
+    public class OmniscapeLoginView : MonoBehaviour
     {
-      var baseUrl = OmniscapeAPI.WebLoginBase?.TrimEnd('/') ?? "";
-      var lp = loginPath?.TrimStart('/') ?? "";
-#if UNITY_IOS
-      if (!string.IsNullOrEmpty(iosAddition)) {
-        var sep = lp.Contains("?") ? "&" : "?";
-        lp = $"{lp}{sep}{iosAddition.TrimStart('?')}";
-      }
-#endif
-      return $"{baseUrl}/{lp}";
-    }
+        [System.Serializable]
+        public class UserRecordEvent : UnityEvent<Omniscape.UserRecord> {}
 
-    public void Show()
-    {
-      var url = BuildUrl();
+        [Header("Events")]
+        public UserRecordEvent OnLoginSuccess = new UserRecordEvent();
 
-#if UNITY_EDITOR || UNITY_STANDALONE
-      Debug.Log($"[OmniscapeLoginView] Editor/Desktop: opening system browser → {url}");
-      Application.OpenURL(url);
-      OnClosed?.Invoke();
-      return;
-#else
-  #if OMNI_USE_UNIWEBVIEW
-      if (_webView != null) Close();
-
-      var go = new GameObject("OmniscapeWebView");
-      _webView = go.AddComponent<UniWebView>();
-      _webView.Frame = new Rect(0, 0, Screen.width, Screen.height);
-      _webView.SetVerticalScrollBarEnabled(false);
-      _webView.SetOpenLinksInExternalBrowser(openLinksExternally);
-      _webView.AddUrlScheme("omniscape"); // expect omniscape://auth?token=...
-
-      _webView.OnShouldClose += (view) => { Close(); return true; };
-      _webView.OnMessageReceived += HandleMessage;
-
-      Debug.Log($"[OmniscapeLoginView] Loading {url}");
-      _webView.Load(url);
-      _webView.Show();
-  #else
-      Debug.LogWarning("[OmniscapeLoginView] OMNI_USE_UNIWEBVIEW not defined. Opening system browser.");
-      Application.OpenURL(url);
-      OnClosed?.Invoke();
-  #endif
-#endif
-    }
-
-#if OMNI_USE_UNIWEBVIEW
-    private async void HandleMessage(UniWebView view, UniWebViewMessage message)
-    {
-      if (!message.Path.Equals("auth", StringComparison.OrdinalIgnoreCase))
-        return;
-
-      try
-      {
-        if (message.Args.TryGetValue("token", out var token) && !string.IsNullOrEmpty(token))
+        /// <summary>
+        /// Starts the login flow. Default behavior opens the web login URL in an external browser.
+        /// If you have an in-app WebView, call your WebView here and route the token to CompleteLogin.
+        /// </summary>
+        public void Show()
         {
-          // 1) Hand token to SDK
-          OmniscapeSdk.SetAccessToken(token);
-
-          // 2) Fetch user
-          UserRecord me = null;
-
-          try { me = await OmniscapeSdk.FetchMe(); }
-          catch { /* /auth/me may not exist yet */ }
-
-          if (me == null && message.Args.TryGetValue("id", out var id) && !string.IsNullOrEmpty(id))
-          {
-            try { me = await OmniscapeSdk.FetchUserById(id); } catch { }
-          }
-
-          if (me != null) OnLoginSuccess?.Invoke(me);
-          else OnError?.Invoke();
-
-          Close();
-          return;
+            var baseUrl = OmniscapeAPI.WebLoginBase;
+            if (!string.IsNullOrEmpty(baseUrl))
+            {
+                Application.OpenURL(baseUrl);
+            }
+            else
+            {
+                Debug.LogWarning("[OmniscapeLoginView] WebLoginBase not set in config.");
+            }
         }
 
-        // Optional: logout signal from page
-        if (message.Args.TryGetValue("logout", out var _))
+        /// <summary>
+        /// Call this after your WebView receives a valid token (and optional user id) to complete login.
+        /// This method fetches the user record and fires OnLoginSuccess.
+        /// </summary>
+        public async void CompleteLogin(string accessToken, string userId = null)
         {
-          OmniscapeSdk.SignOut();
-          OnLogout?.Invoke();
-          Close();
-          return;
+            if (!string.IsNullOrEmpty(accessToken))
+                OmniscapeAPI.SetAccessToken(accessToken);
+
+            Omniscape.UserRecord me = null;
+            try
+            {
+                // Prefer /auth/me
+                me = await OmniscapeAPI.FetchMe();
+                if (me == null && !string.IsNullOrEmpty(userId))
+                    me = await OmniscapeAPI.FetchUserById(userId);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[OmniscapeLoginView] Fetch user failed: {e.GetType().Name} {e.Message}");
+            }
+
+            if (me != null)
+            {
+                OnLoginSuccess?.Invoke(me);
+            }
+            else
+            {
+                Debug.LogWarning("[OmniscapeLoginView] Login not completed; user record could not be fetched.");
+            }
         }
-      }
-      catch (Exception e)
-      {
-        Debug.LogError("[OmniscapeLoginView] Error handling auth message: " + e);
-        OnError?.Invoke();
-        Close();
-      }
     }
-#endif
-
-    public void Close()
-    {
-#if OMNI_USE_UNIWEBVIEW
-      if (_webView != null) {
-        var go = _webView.gameObject;
-        _webView = null;
-        Destroy(go);
-      }
-#endif
-      OnClosed?.Invoke();
-    }
-
-    private void OnDisable() => Close();
-  }
 }
