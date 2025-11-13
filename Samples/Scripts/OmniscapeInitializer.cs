@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using Omniscape;
 using Omniscape.UI;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Boots the Omniscape SDK, starts the login flow (WebView or external), and caches the logged-in user.
@@ -18,6 +19,11 @@ public class OmniscapeInitializer : MonoBehaviour
 
     [Header("Editor-only Dev Login UI")]
     public GameObject editorLoginPanel;
+    
+    [SerializeField]
+    [Tooltip("Name of the scene to load after successful deep link auth.")]
+    private string targetSceneName = "LoaderScene";
+
 
 #if UNITY_EDITOR
     [Tooltip("When true in the Editor, shows the paste-token panel instead of launching the web login.")]
@@ -143,7 +149,9 @@ public class OmniscapeInitializer : MonoBehaviour
             // good to go
             Omniscape.GlobalUserCache.Set(me);
             Debug.Log($"[Initializer] ✅ Resumed as {me.username} ({me.email})");
-            UnityEngine.SceneManagement.SceneManager.LoadScene("MainScene");
+            Debug.Log($"[Initializer] ✅ Loading next scene: {targetSceneName}" );
+            SceneManager.LoadScene(targetSceneName);
+            
         }
         catch (Exception e)
         {
