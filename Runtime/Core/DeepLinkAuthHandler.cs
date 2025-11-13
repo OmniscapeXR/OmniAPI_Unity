@@ -4,6 +4,10 @@ using UnityEngine.SceneManagement;
 
 public class DeepLinkAuthHandler : MonoBehaviour
 {
+    [SerializeField]
+    [Tooltip("Name of the scene to load after successful deep link auth.")]
+    private string targetSceneName = "MainScene";
+
     void Awake()
     {
         if (!string.IsNullOrEmpty(Application.absoluteURL))
@@ -85,7 +89,15 @@ Omniscape.GlobalUserCache.Set(me);
             Debug.Log($"[DeepLinkAuth] ✅ Logged in as {me.username} ({me.email})");
 
             // Advance your app now
-            SceneManager.LoadScene("MainScene");
+            if (!string.IsNullOrWhiteSpace(targetSceneName))
+            {
+                Debug.Log($"[DeepLinkAuth] Loading scene '{targetSceneName}'");
+                SceneManager.LoadScene(targetSceneName);
+            }
+            else
+            {
+                Debug.LogWarning("[DeepLinkAuth] targetSceneName is not set; staying in current scene.");
+            }
         }
         catch (Exception ex)
         {
