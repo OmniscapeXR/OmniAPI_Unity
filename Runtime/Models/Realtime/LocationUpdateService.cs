@@ -1,4 +1,5 @@
 ﻿// OmniAPI/Runtime/Realtime/LocationUpdateService.cs
+using System;
 using System.Threading.Tasks;
 using Omniscape.API.Models.Realtime;
 using UnityEngine;
@@ -12,14 +13,14 @@ namespace Omniscape.API.Realtime
     {
         [Header("SDK Config Asset")]
         public OmniscapeAPIConfig config;
+
+		public event Action<string> OnNearPlayerJson;   // raw JSON from server
         
         public float minMetersDelta = 5f;     // send only if moved this far
         public float minSeconds     = 3f;     // or this much time elapsed
         public int   desiredAccuracyMeters = 10;
         public int   updateDistanceMeters  = 5;
-        
-
-
+       
         LocationSocket _socket;
         string _uid;
         Vector2d _lastLatLon;
@@ -29,7 +30,8 @@ namespace Omniscape.API.Realtime
 
         public async Task Initialize(LocationSocket socket, string uid)
         {
-            _socket = socket;
+            _socket = new LocationSocket(config.locationWsUrl);
+            _socket.OnNearPlayer += HandleNearPlayer;  // subscribe here
             _uid = uid;
 
 #if UNITY_EDITOR
@@ -69,6 +71,8 @@ namespace Omniscape.API.Realtime
             );
             _lastSentTime = 0;
             enabled = true;
+
+
         }
 
 
@@ -76,6 +80,18 @@ namespace Omniscape.API.Realtime
         {
             if (Input.location.isEnabledByUser) Input.location.Stop();
             _ = _socket?.CloseAsync();  
+        }
+        
+        void OnDestroy()
+        {
+            if (_socket != null)
+                _socket.OnNearPlayer -= HandleNearPlayer;
+        }
+
+        private void HandleNearPlayer(string payload)
+        {
+            Debug.Log("[LocationUpdateService] near-player payload: " + payload);
+            OnNearPlayerJson?.Invoke(payload);
         }
 
         void Update()
